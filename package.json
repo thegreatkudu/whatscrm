@@ -10,6 +10,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.32.0",
     "@google/generative-ai": "^0.24.1",
