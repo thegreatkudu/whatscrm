@@ -240,10 +240,26 @@ app.get("*", function (request, response) {
 });
 
 // ─── Server ───────────────────────────────────────────────────────────────────
-const server = app.listen(process.env.PORT || 3010, () => {
-  isLogging &&
-    console.log(`WaCrm server is running on port ${process.env.PORT}`);
+// Start server only if not running in Vercel serverless environment
+if (!process.env.VERCEL) {
+  const server = app.listen(process.env.PORT || 3010, () => {
+    isLogging &&
+      console.log(`WaCrm server is running on port ${process.env.PORT}`);
 
+    updateLangJsonFromEnglish();
+    init();
+    setTimeout(() => {
+      warmerLoopInit();
+      initCampaign();
+      initTele();
+      initQrCampaignLoop();
+    }, 1000);
+  });
+
+  // ─── Socket.IO ────────────────────────────────────────────────────────────────
+  const io = require("./socket").initializeSocket(server);
+} else {
+  // For Vercel, initialize background processes
   updateLangJsonFromEnglish();
   init();
   setTimeout(() => {
@@ -252,11 +268,10 @@ const server = app.listen(process.env.PORT || 3010, () => {
     initTele();
     initQrCampaignLoop();
   }, 1000);
-});
+}
 
-// ─── Socket.IO ────────────────────────────────────────────────────────────────
-const io = require("./socket").initializeSocket(server);
-module.exports = io;
+// Export for Vercel compatibility
+module.exports = app;
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
 nodeCleanup(async (exitCode, signal) => {
