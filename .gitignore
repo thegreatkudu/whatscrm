@@ -51,11 +51,11 @@ temp/
 *.tmp
 
 # Media files (large files that shouldn't be in git)
-client/public/media/
-client/public/meta-media/
-client/public/notification/
 client/public/recordings/
 sessions/
+
+# Credentials/keys must never be tracked or served
+client/public/media/*.json
 
 # Database files
 *.sql
