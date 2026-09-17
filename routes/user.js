@@ -3036,7 +3036,7 @@ router.get("/get_my_meta_templets_beta", validateUser, async (req, res) => {
     const limit = req.query.limit || 9;
     const after = req.query.after || null;
     const before = req.query.before || null;
-    const status = req.query.status || "APPROVED";
+    const status = req.query.status || "";
 
     const resp = await getAllTempletsMetaBeta(
       "v21.0", // Use your API version

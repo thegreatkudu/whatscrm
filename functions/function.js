@@ -1798,9 +1798,12 @@ async function getAllTempletsMetaBeta(
   limit = 9,
   after = null,
   before = null,
-  status = "APPROVED",
+  status = "",
 ) {
-  let url = `https://graph.facebook.com/${apiVersion}/${waba_id}/message_templates?limit=${limit}&status=${status}`;
+  let url = `https://graph.facebook.com/${apiVersion}/${waba_id}/message_templates?limit=${limit}`;
+  if (status) {
+    url += `&status=${status}`;
+  }
 
   // Add cursor parameters if provided
   if (after) {
