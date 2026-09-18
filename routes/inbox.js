@@ -226,6 +226,10 @@ router.post("/embed/webhook/:uid", async (req, res) => {
         await processMessage({ body, uid: userUID, origin: "meta_echo" });
         break;
 
+      case "message_template_status_update":
+        logToFile("TEMPLATE_STATUS_UPDATE", change.value);
+        break;
+
       case "calls":
         const callEvents = change.value.calls || [];
         const callStatuses = change.value.statuses || [];
@@ -365,6 +369,10 @@ router.post("/webhook/:uid", async (req, res) => {
             }
           }
         }
+        break;
+
+      case "message_template_status_update":
+        logger.log("📄 Template status update:", change.value);
         break;
 
       case "calls":
@@ -571,6 +579,24 @@ async function handleMessages(change, uid, body) {
         `UPDATE beta_campaign_logs SET delivery_status = ? WHERE meta_msg_id = ?`,
         [status, id],
       );
+    }
+
+    // Recompute campaign delivered/read counters from the affected log
+    if (id) {
+      const found = await query(
+        `SELECT campaign_id FROM beta_campaign_logs WHERE meta_msg_id = ? LIMIT 1`,
+        [id],
+      );
+      if (found?.length > 0 && found[0]?.campaign_id) {
+        const cid = found[0].campaign_id;
+        await query(
+          `UPDATE beta_campaign SET
+            delivered_count = (SELECT COUNT(*) FROM beta_campaign_logs WHERE campaign_id = ? AND delivery_status = 'delivered'),
+            read_count = (SELECT COUNT(*) FROM beta_campaign_logs WHERE campaign_id = ? AND delivery_status = 'read')
+           WHERE campaign_id = ?`,
+          [cid, cid, cid],
+        );
+      }
     }
   }
 
