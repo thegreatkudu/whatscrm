@@ -1094,7 +1094,12 @@ router.post("/add_meta_templet", validateUser, checkPlan, async (req, res) => {
     );
 
     if (resp.error) {
-      res.json({ msg: resp?.error?.error_user_msg || resp?.error?.message });
+      logger.log("CREATE TEMPLATE ERROR:", resp?.error || resp);
+      const errMsg =
+        resp?.error?.error_user_msg ||
+        resp?.error?.message ||
+        "Failed to create template";
+      res.json({ success: false, msg: errMsg, message: errMsg });
     } else {
       logger.log(resp);
       res.json({
