@@ -973,6 +973,21 @@ router.post("/update_meta", validateUser, async (req, res) => {
       });
     }
 
+    // Guard: prevent two users from sharing the same WhatsApp number.
+    // Each user must have its own number so campaigns/messages don't collide.
+    const inUse = await query(
+      `SELECT uid FROM meta_api
+       WHERE business_phone_number_id = ? AND uid != ? LIMIT 1`,
+      [business_phone_number_id, req.decode.uid],
+    );
+
+    if (inUse.length > 0) {
+      return res.json({
+        success: false,
+        msg: `This WhatsApp Number ID is already connected to another account (${inUse[0].uid}). Each user must use its own number to avoid cross-sending.`,
+      });
+    }
+
     const findOne = await query(`SELECT * FROM meta_api WHERE uid = ?`, [
       req.decode.uid,
     ]);
