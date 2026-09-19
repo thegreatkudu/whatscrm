@@ -376,6 +376,18 @@ async function processSingleCampaign(campaign) {
     );
   }
 
+  // Suppress any pending logs whose contact has opted out (STOP/unsubscribe)
+  await query(
+    `UPDATE beta_campaign_logs l
+     LEFT JOIN contact c
+       ON c.uid = l.uid AND c.mobile = l.contact_mobile AND c.unsubscribed = 1
+     SET l.status = 'FAILED',
+         l.delivery_status = 'failed',
+         l.error_message = 'Unsubscribed (opt-out)'
+     WHERE l.campaign_id = ? AND l.status = 'PENDING' AND c.id IS NOT NULL`,
+    [campaign.campaign_id],
+  );
+
   const pendingLogs = await query(
     `SELECT * FROM beta_campaign_logs 
      WHERE campaign_id = ? AND status = 'PENDING'

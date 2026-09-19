@@ -18,6 +18,13 @@ const validateUser = require("../middlewares/user.js");
 const { getIOInstance } = require("../socket.js");
 const { checkPlan } = require("../middlewares/plan.js");
 const { processMessage } = require("../helper/inbox/inbox.js");
+const {
+  matchStop,
+  ensureOptOutTables,
+  processOptOut,
+  resubscribe,
+  getOptOuts,
+} = require("../helper/optout/index.js");
 const con = require("../database/config.js");
 const { updateMessageStatus } = require("../loops/campaignBeta.js");
 const logger = require("../utils/logger.js");
@@ -31,6 +38,8 @@ const {
 } = require("../helper/addon/wacall/broadcastProcessor.js");
 
 function logToFile(label, data) {}
+
+ensureOptOutTables().catch((err) => logger.log("Opt-out init:", err && err.message));
 
 // WhatsApp Webhook Verification
 router.get("/embed/webhook/:uid", async (req, res) => {
@@ -554,7 +563,12 @@ async function handleMessages(change, uid, body) {
 
     // Update API logs
     const { status, id } = statuses[0];
-    const errorData = JSON.stringify(body);
+    const conciseErrors = (status?.errors || [])
+      .map((e) => `#${e.code || ""} ${e.title || e.message || ""}`.trim())
+      .filter(Boolean)
+      .join(" | ");
+    const errorData =
+      conciseErrors || (status === "failed" ? `failed (${status.status})` : "");
 
     if (status === "failed") {
       await query(
@@ -617,6 +631,22 @@ async function handleMessages(change, uid, body) {
     }
   }
 
+  // ── Opt-out (STOP keyword) handling for inbound WhatsApp messages ──
+  if (value?.messages?.length) {
+    for (const msg of value.messages) {
+      if (!msg) continue;
+      const text = msg?.text?.body;
+      const keyword = text ? matchStop(text) : null;
+      if (keyword) {
+        const from = String(msg.from || "").replace(/[^0-9]/g, "");
+        if (from) {
+          await processOptOut({ uid, mobile: from, reason: `STOP keyword "${keyword}"` });
+          logger.log(`📵 Opt-out registered for ${from} (${uid})`);
+        }
+      }
+    }
+  }
+
   // Save message
   await processMessage({
     body,
@@ -624,8 +654,6 @@ async function handleMessages(change, uid, body) {
     origin: "meta",
   });
 }
-
-// adding webhook
 router.get("/webhook/:uid", async (req, res) => {
   try {
     const { uid } = req.params;
@@ -734,5 +762,30 @@ function groupChatsByNumberArrayFormat(chats) {
 
   return groupedChats;
 }
+
+// ── Opt-out management ─────────────────────────────────────────
+
+// Get opt-out history + currently unsubscribed contacts
+router.get("/opt_outs", validateUser, async (req, res) => {
+  try {
+    const { logs, contacts } = await getOptOuts(req.decode.uid);
+    res.json({ success: true, logs, contacts });
+  } catch (err) {
+    logger.error("Error fetching opt-outs:", err);
+    res.json({ success: false, msg: "Something went wrong" });
+  }
+});
+
+// Re-subscribe a contact (flip unsubscribed back to 0)
+router.post("/resubscribe", validateUser, async (req, res) => {
+  try {
+    const { mobile } = req.body;
+    const result = await resubscribe({ uid: req.decode.uid, mobile });
+    res.json(result);
+  } catch (err) {
+    logger.error("Error resubscribing:", err);
+    res.json({ success: false, msg: "Something went wrong" });
+  }
+});
 
 module.exports = router;

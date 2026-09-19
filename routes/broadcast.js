@@ -35,7 +35,7 @@ router.post("/add_new", validateUser, checkPlan, async (req, res) => {
     }
 
     const getPhonebookContacts = await query(
-      `SELECT * FROM contact where phonebook_id = ? AND uid = ?`,
+      `SELECT * FROM contact where phonebook_id = ? AND uid = ? AND (unsubscribed IS NULL OR unsubscribed = 0)`,
       [id, req.decode.uid],
     );
 
@@ -273,7 +273,7 @@ router.post(
           MAX(var4)  as var4,
           MAX(var5)  as var5
         FROM contact
-        WHERE phonebook_id = ? AND uid = ?
+        WHERE phonebook_id = ? AND uid = ? AND (unsubscribed IS NULL OR unsubscribed = 0)
         GROUP BY mobile`,
         [phonebook_id, req.decode.uid],
       );
