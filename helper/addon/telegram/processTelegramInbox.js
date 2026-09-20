@@ -594,6 +594,17 @@ async function saveMessageToDatabase(message, chatId, uid) {
  */
 async function updateChatInDatabase(message, uid, chatName) {
   try {
+    // Capture the sender so chats can be merged per customer
+    if (message.route === "INCOMING") {
+      const { captureCustomerAlias } = require("../../customer/index.js");
+      await captureCustomerAlias({
+        uid,
+        origin: message.origin || "telegram",
+        channelId: message.chatId,
+        senderName: chatName || message.senderName,
+      });
+    }
+
     // Check if chat exists
     const [existingChat] = await query(
       `SELECT * FROM beta_chats WHERE chat_id = ? AND uid = ?`,

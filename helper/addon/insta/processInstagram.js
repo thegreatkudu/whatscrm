@@ -89,6 +89,16 @@ async function updateChatInMysql({
     const allowedTypes = ["text", "image", "video", "audio", "document"];
     const isIncoming = actualMsg?.route === "INCOMING";
 
+    if (isIncoming) {
+      const { captureCustomerAlias } = require("../../customer/index.js");
+      await captureCustomerAlias({
+        uid,
+        origin: "instagram",
+        channelId: senderIgsid,
+        senderName,
+      });
+    }
+
     const [chat] = await query(
       `SELECT unread_count FROM beta_chats WHERE chat_id = ? AND uid = ? LIMIT 1`,
       [chatId, uid],

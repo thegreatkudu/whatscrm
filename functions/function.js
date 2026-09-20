@@ -3121,24 +3121,25 @@ Only change what the instruction asks for.`;
 Return { nodes, edges } JSON following all the rules.`;
 }
 
-async function callOpenAI(apiKey, model, systemPrompt, userPrompt) {
+async function callOpenAI(apiKey, model, systemPrompt, userPrompt, opts = {}) {
   return callOpenAICompatible(
     apiKey,
     model,
     systemPrompt,
     userPrompt,
     "https://api.openai.com/v1",
+    opts,
   );
 }
 
-async function callGemini(apiKey, model, systemPrompt, userPrompt) {
+async function callGemini(apiKey, model, systemPrompt, userPrompt, opts = {}) {
   const { GoogleGenerativeAI } = require("@google/generative-ai");
   const genAI = new GoogleGenerativeAI(apiKey);
   const geminiModel = genAI.getGenerativeModel({
     model,
     generationConfig: {
-      temperature: 0.3,
-      maxOutputTokens: 4000,
+      temperature: opts.temperature ?? 0.3,
+      maxOutputTokens: opts.maxTokens ?? 4000,
       responseMimeType: "application/json",
     },
     systemInstruction: { parts: [{ text: systemPrompt }], role: "system" },
@@ -3149,20 +3150,28 @@ async function callGemini(apiKey, model, systemPrompt, userPrompt) {
   return result.response.text();
 }
 
-async function callDeepSeek(apiKey, model, systemPrompt, userPrompt) {
+async function callDeepSeek(apiKey, model, systemPrompt, userPrompt, opts = {}) {
   return callOpenAICompatible(
     apiKey,
     model,
     systemPrompt,
     userPrompt,
     "https://api.deepseek.com/v1",
+    opts,
   );
 }
 
 // Generic OpenAI-compatible chat completions call.
 // baseUrl can point to OpenAI, Azure OpenAI, DeepSeek, Groq, Ollama,
 // LocalAI, Together, or any OpenAI-compatible endpoint (incl. Copilot-style).
-async function callOpenAICompatible(apiKey, model, systemPrompt, userPrompt, baseUrl) {
+async function callOpenAICompatible(
+  apiKey,
+  model,
+  systemPrompt,
+  userPrompt,
+  baseUrl,
+  opts = {},
+) {
   const endpoint = `${(baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "")}/chat/completions`;
   const isOpenAIHost = (baseUrl || "").includes("openai.com");
   const payload = {
@@ -3171,8 +3180,8 @@ async function callOpenAICompatible(apiKey, model, systemPrompt, userPrompt, bas
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.3,
-    max_tokens: 4000,
+    temperature: opts.temperature ?? 0.3,
+    max_tokens: opts.maxTokens ?? 4000,
   };
   // response_format (json_object) is only guaranteed on official OpenAI hosts
   if (isOpenAIHost) {
@@ -3189,12 +3198,13 @@ async function callOpenAICompatible(apiKey, model, systemPrompt, userPrompt, bas
 }
 
 // Anthropic Claude
-async function callAnthropic(apiKey, model, systemPrompt, userPrompt) {
+async function callAnthropic(apiKey, model, systemPrompt, userPrompt, opts = {}) {
   const response = await axios.post(
     "https://api.anthropic.com/v1/messages",
     {
       model: model || "claude-3-5-sonnet-latest",
-      max_tokens: 4000,
+      max_tokens: opts.maxTokens ?? 4000,
+      temperature: opts.temperature,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     },
@@ -3423,25 +3433,30 @@ async function callAIProvider({
   model,
   systemPrompt,
   userPrompt,
+  temperature,
+  maxTokens,
 }) {
+  const opts = { temperature, maxTokens };
   switch (String(provider || "openai_compatible").toLowerCase()) {
     case "openai":
-      return callOpenAI(apiKey, model || "gpt-3.5-turbo", systemPrompt, userPrompt);
+      return callOpenAI(apiKey, model || "gpt-3.5-turbo", systemPrompt, userPrompt, opts);
     case "claude":
       return callAnthropic(
         apiKey,
         model || "claude-3-5-sonnet-latest",
         systemPrompt,
         userPrompt,
+        opts,
       );
     case "gemini":
-      return callGemini(apiKey, model || "gemini-1.5-flash", systemPrompt, userPrompt);
+      return callGemini(apiKey, model || "gemini-1.5-flash", systemPrompt, userPrompt, opts);
     case "deepseek":
       return callDeepSeek(
         apiKey,
         model || "deepseek-chat",
         systemPrompt,
         userPrompt,
+        opts,
       );
     default:
       return callOpenAICompatible(
@@ -3450,6 +3465,7 @@ async function callAIProvider({
         systemPrompt,
         userPrompt,
         baseUrl,
+        opts,
       );
   }
 }

@@ -13,6 +13,7 @@ const {
 } = require("../addon/telegram/processTelegramInbox");
 const { processWebhook } = require("./chatbot");
 const { processAutomation } = require("../../automation/automation");
+const { captureCustomerAlias } = require("../customer/index.js");
 const { sendFCMNotification } = require("../../functions/function");
 const {
   processWebPushMessageNotificaion,
@@ -388,6 +389,18 @@ async function processMessage({
         origin,
         chatId: latestConversation?.chatId,
       });
+
+      // Capture the sender across channels so chats can be merged per customer
+      const captureMsg = latestConversation?.newMessage;
+      if (captureMsg?.route === "INCOMING") {
+        await captureCustomerAlias({
+          uid,
+          origin,
+          channelId: captureMsg?.senderMobile,
+          senderName: captureMsg?.senderName || captureMsg?.senderMobile,
+          phone: origin === "meta" || origin === "qr" ? captureMsg?.senderMobile : null,
+        });
+      }
 
       const msg = latestConversation?.newMessage;
       if (msg?.route === "INCOMING") {

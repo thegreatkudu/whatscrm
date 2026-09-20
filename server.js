@@ -184,6 +184,7 @@ app.use("/api/agent", require("./routes/agent"));
 app.use("/api/qr", require("./routes/qr"));
 app.use("/api/ai", require("./routes/ai"));
 app.use("/api/ai-settings", require("./routes/aiSettings"));
+app.use("/api/customer", require("./routes/customer"));
 app.use("/api/webhook", require("./routes/webhook"));
 app.use("/api/wa_call", require("./routes/waCall"));
 app.use("/api/telegram", require("./routes/telegram"));

@@ -377,6 +377,15 @@ router.post("/webhook/:uid", async (req, res) => {
           sentBy: "instagram_comment",
         });
 
+        // Capture the commenter so their chats can be merged per customer
+        const { captureCustomerAlias } = require("../helper/customer/index.js");
+        await captureCustomerAlias({
+          uid,
+          origin: "instagram_comment",
+          channelId: senderMobile,
+          senderName: commenterName,
+        });
+
         // ── Update last_message on chat ──────────────────────────────────
         await query(
           `UPDATE beta_chats SET last_message = ?, sender_name = ? 

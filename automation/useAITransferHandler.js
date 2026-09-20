@@ -9,6 +9,13 @@ const DEFAULT_SYSTEM_PROMPT =
   "Answer the customer's latest message using the chat history given below. " +
   "Keep replies concise, natural and in plain text. Do not use markdown.";
 
+// The flow builder sends provider/model as autocomplete option objects
+// like { id, name }. Normalise them to plain strings.
+function pickId(value, fallback) {
+  if (value == null || value === "") return fallback;
+  return typeof value === "object" ? value?.id || value?.name || String(value) : value;
+}
+
 // Handles the flow-builder AI node. processAiTransfer calls this with:
 //   aiTransferHandler(config = node.data, conversationArr = last N messages)
 // config carries provider/apiKey/model/baseUrl when set by the flow; otherwise
@@ -16,7 +23,10 @@ const DEFAULT_SYSTEM_PROMPT =
 async function aiTransferHandler(config = {}, conversationArr = []) {
   try {
     const uid = config?._uid;
-    let { provider, apiKey, baseUrl, model } = config || {};
+    let provider = pickId(config?.provider, null);
+    let apiKey = config?.apiKey;
+    let baseUrl = config?.baseUrl;
+    let model = pickId(config?.model, null);
 
     if (!apiKey && uid) {
       const saved = await getUserAISettings(uid);
@@ -48,6 +58,8 @@ async function aiTransferHandler(config = {}, conversationArr = []) {
       model,
       systemPrompt: config?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
       userPrompt,
+      temperature: config?.temperature,
+      maxTokens: config?.maxTokens,
     });
 
     return { success: true, data: { message: String(text || "").trim() } };
