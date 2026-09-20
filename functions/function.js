@@ -3414,6 +3414,77 @@ function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Dispatch to the right provider for a single AI text call.
+// Works for openai, openai_compatible (default), claude, gemini, deepseek.
+async function callAIProvider({
+  provider,
+  apiKey,
+  baseUrl,
+  model,
+  systemPrompt,
+  userPrompt,
+}) {
+  switch (String(provider || "openai_compatible").toLowerCase()) {
+    case "openai":
+      return callOpenAI(apiKey, model || "gpt-3.5-turbo", systemPrompt, userPrompt);
+    case "claude":
+      return callAnthropic(
+        apiKey,
+        model || "claude-3-5-sonnet-latest",
+        systemPrompt,
+        userPrompt,
+      );
+    case "gemini":
+      return callGemini(apiKey, model || "gemini-1.5-flash", systemPrompt, userPrompt);
+    case "deepseek":
+      return callDeepSeek(
+        apiKey,
+        model || "deepseek-chat",
+        systemPrompt,
+        userPrompt,
+      );
+    default:
+      return callOpenAICompatible(
+        apiKey,
+        model || "gpt-4o",
+        systemPrompt,
+        userPrompt,
+        baseUrl,
+      );
+  }
+}
+
+// Extract readable text out of a beta_conversation msgContext row
+// regardless of channel (WhatsApp, Messenger, Instagram, Telegram, QR).
+function extractMessageText(msgContext) {
+  try {
+    const c =
+      typeof msgContext === "string"
+        ? JSON.parse(msgContext)
+        : msgContext || {};
+    return (
+      c?.text?.body ||
+      c?.body ||
+      c?.message ||
+      c?.msgContext?.body ||
+      (typeof c === "string" ? c : JSON.stringify(c))
+    );
+  } catch (err) {
+    return String(msgContext || "");
+  }
+}
+
+// Build a plain-text chat history for the AI, newest last.
+function buildConversationHistory(conversationArr, limit = 10) {
+  const rows = (conversationArr || []).slice(-limit);
+  return rows
+    .map((row) => {
+      const who = row?.route === "OUTGOING" ? "Assistant" : "Customer";
+      return `${who}: ${extractMessageText(row?.msgContext)}`;
+    })
+    .join("\n");
+}
+
 module.exports = {
   serializeNodeSchema,
   buildSystemPrompt,
@@ -3423,6 +3494,9 @@ module.exports = {
   callDeepSeek,
   callOpenAICompatible,
   callAnthropic,
+  callAIProvider,
+  extractMessageText,
+  buildConversationHistory,
   removeTokenFromAll,
   sendFCMNotification,
   translateWithOpenAI,

@@ -1,6 +1,14 @@
 const flowProcessor = require("./functions");
 const { query } = require("../database/dbpromise");
 const logger = require("../utils/logger");
+const {
+  callAIProvider,
+  saveMessageToConversation,
+  getCurrentTimestampInTimeZone,
+  buildConversationHistory,
+} = require("../functions/function");
+const { getUserAISettings } = require("../routes/aiSettings");
+const { sendWaMessage } = require("./functions");
 
 async function processFlow({
   nodes,
@@ -521,6 +529,101 @@ async function processFlow({
   }
 }
 
+const AI_AUTO_SYSTEM_PROMPT =
+  "You are a helpful AI customer assistant for this business. " +
+  "Answer the customer's latest message using the chat history below. " +
+  "Keep replies short, friendly and in plain text. Never use markdown.";
+
+// Global AI auto-reply fallback: fires when the user has no active flow for
+// the channel. Uses the workspace's saved ai_settings and always opts out of
+// waiving contacts who requested to be unsubscribed (WhatsApp).
+async function aiAutoReply({ uid, message, user, sessionId, origin, chatId }) {
+  try {
+    if (message?.route && message?.route !== "INCOMING") return;
+
+    if (origin === "meta") {
+      const mobile = String(message?.senderMobile || "").replace(
+        /[^0-9]/g,
+        "",
+      );
+      if (mobile) {
+        const optedOut = await query(
+          `SELECT id FROM contact
+           WHERE uid = ? AND unsubscribed = 1
+             AND REPLACE(mobile, char(43), '') = ? LIMIT 1`,
+          [uid, mobile],
+        );
+        if (optedOut?.[0]) {
+          return logger.log("Skipped AI auto-reply for unsubscribed contact");
+        }
+      }
+    }
+
+    const settings = await getUserAISettings(uid);
+    if (!settings?.api_key || Number(settings?.enabled) === 0) return;
+
+    const recentRows = await query(
+      `SELECT type, msgContext, route, timestamp
+       FROM beta_conversation
+       WHERE chat_id = ? AND uid = ?
+       ORDER BY timestamp DESC LIMIT 12`,
+      [chatId, uid],
+    );
+
+    const userPrompt = buildConversationHistory(recentRows?.reverse(), 12);
+
+    const reply = String(
+      (await callAIProvider({
+        provider: settings.provider,
+        apiKey: settings.api_key,
+        baseUrl: settings.base_url,
+        model: settings.model,
+        systemPrompt: AI_AUTO_SYSTEM_PROMPT,
+        userPrompt,
+      })) || "",
+    ).trim();
+    if (!reply) return;
+
+    const sendMsg = await sendWaMessage({
+      origin,
+      message,
+      uid,
+      isGroup: false,
+      content: { type: "text", text: { preview_url: true, body: reply } },
+    });
+
+    if (sendMsg) {
+      const messageData = {
+        type: "text",
+        metaChatId: sendMsg,
+        msgContext: { type: "text", text: { preview_url: true, body: reply } },
+        reaction: "",
+        timestamp:
+          parseInt(
+            getCurrentTimestampInTimeZone(user?.timezone || "Asia/Kolkata"),
+          ) + 1,
+        senderName: message.senderName,
+        senderMobile: message.senderMobile,
+        star: 0,
+        route: "OUTGOING",
+        context: null,
+        origin,
+      };
+
+      await saveMessageToConversation({ uid, chatId, messageData, sentBy: "bot" });
+
+      await query(
+        `UPDATE beta_chats SET last_message = ? WHERE chat_id = ? AND uid = ?`,
+        [JSON.stringify(messageData), chatId, uid],
+      );
+
+      logger.log(`[AI auto-reply] replied on ${origin} to ${message.senderMobile}`);
+    }
+  } catch (err) {
+    logger.error("[AI auto-reply] error:", err);
+  }
+}
+
 async function processAutomation({
   uid,
   message,
@@ -539,6 +642,9 @@ async function processAutomation({
   });
 
   if (userFlows?.length < 1) {
+    // No flow is handling this message — fall back to the saved AI settings
+    // so the workspace can still auto-reply on any channel.
+    await aiAutoReply({ uid, message, user, sessionId, origin, chatId });
     return logger.log("User does not have any active automation flow");
   }
 

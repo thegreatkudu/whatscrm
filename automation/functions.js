@@ -2071,7 +2071,11 @@ async function processAiTransfer({
     conversationArr = [...conversationArr]?.reverse() || [];
 
     const result = await aiTransferHandler(
-      { ...config, _chatKey: message?.senderMobile || chatId || "default" },
+      {
+        ...config,
+        _chatKey: message?.senderMobile || chatId || "default",
+        _uid: user?.uid,
+      },
       conversationArr,
     );
 
@@ -3290,6 +3294,7 @@ module.exports = {
   getActiveFlows,
   getFlowSession,
   processSendMessage,
+  sendWaMessage,
   replaceVariables,
   processCondition,
   processResponseSaver,
