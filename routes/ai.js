@@ -7,10 +7,15 @@ const {
   suggestReplyWithOpenAI,
   suggestReplyWithGemini,
   suggestReplyWithDeepseek,
+  suggestReplyWithOpenAICompatible,
+  suggestReplyWithClaude,
   translateWithOpenAI,
   translateWithGemini,
   translateWithDeepseek,
+  translateWithOpenAICompatible,
+  translateWithClaude,
 } = require("../functions/function.js");
+const { getUserAISettings } = require("./aiSettings");
 const logger = require("../utils/logger.js");
 
 // Custom check function
@@ -58,7 +63,6 @@ router.post(
     check("text", "Text is required").notEmpty(),
     check("targetLanguage", "Target language is required").notEmpty(),
     check("provider", "AI provider is required").notEmpty(),
-    check("apiKey", "API key is required").notEmpty(),
   ]),
   validateUser,
   async (req, res) => {
@@ -67,7 +71,17 @@ router.post(
       return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { text, targetLanguage, provider, apiKey } = req.body;
+    let { text, targetLanguage, provider, apiKey, baseUrl, model } = req.body;
+
+    if (!apiKey) {
+      const saved = await getUserAISettings(req.decode.uid);
+      if (saved?.api_key) {
+        apiKey = saved.api_key;
+        baseUrl = baseUrl || saved.base_url;
+        model = model || saved.model;
+        provider = provider || saved.provider;
+      }
+    }
 
     try {
       let translatedText = "";
@@ -92,6 +106,23 @@ router.post(
             text,
             targetLanguage,
             apiKey,
+          );
+          break;
+        case "claude":
+          translatedText = await translateWithClaude(
+            text,
+            targetLanguage,
+            apiKey,
+            model,
+          );
+          break;
+        case "openai_compatible":
+          translatedText = await translateWithOpenAICompatible(
+            text,
+            targetLanguage,
+            apiKey,
+            baseUrl,
+            model,
           );
           break;
         default:
@@ -120,7 +151,6 @@ router.post(
   validate([
     check("chatId", "Chat ID is required").notEmpty(),
     check("provider", "AI provider is required").notEmpty(),
-    check("apiKey", "API key is required").notEmpty(),
   ]),
   validateUser,
   async (req, res) => {
@@ -129,8 +159,18 @@ router.post(
       return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { chatId, lastMessage, provider, apiKey } = req.body;
+    let { chatId, lastMessage, provider, apiKey, baseUrl, model } = req.body;
     const { uid } = req.decode;
+
+    if (!apiKey) {
+      const saved = await getUserAISettings(uid);
+      if (saved?.api_key) {
+        apiKey = saved.api_key;
+        baseUrl = baseUrl || saved.base_url;
+        model = model || saved.model;
+        provider = provider || saved.provider;
+      }
+    }
 
     try {
       // Get recent conversation messages for context
@@ -158,6 +198,23 @@ router.post(
             recentMessages,
             lastMessage,
             apiKey,
+          );
+          break;
+        case "claude":
+          suggestion = await suggestReplyWithClaude(
+            recentMessages,
+            lastMessage,
+            apiKey,
+            model,
+          );
+          break;
+        case "openai_compatible":
+          suggestion = await suggestReplyWithOpenAICompatible(
+            recentMessages,
+            lastMessage,
+            apiKey,
+            baseUrl,
+            model,
           );
           break;
         default:

@@ -2312,6 +2312,122 @@ async function suggestReplyWithDeepseek(messages, lastMessage, apiKey) {
   }
 }
 
+// Generic OpenAI-compatible suggestion reply (works with OpenAI, Copilot/Azure,
+// Groq, Ollama, LocalAI, DeepSeek, etc. via a custom base URL + model)
+async function suggestReplyWithOpenAICompatible(
+  messages,
+  lastMessage,
+  apiKey,
+  baseUrl,
+  model,
+) {
+  try {
+    const formattedMessages = messages.map((msg) => ({
+      role: msg.route === "INCOMING" ? "user" : "assistant",
+      content: msg.text,
+    }));
+
+    formattedMessages.unshift({
+      role: "system",
+      content:
+        "You are a helpful assistant. Generate a concise, natural-sounding reply to the conversation. The reply should be friendly, helpful, and appropriate for a business conversation. Only return the suggested reply without explanations.",
+    });
+    if (lastMessage) {
+      formattedMessages.push({
+        role: "user",
+        content: lastMessage,
+      });
+    }
+
+    const endpoint = `${(baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "")}/chat/completions`;
+
+    const response = await axios.post(
+      endpoint,
+      {
+        model: model || "gpt-3.5-turbo",
+        messages: formattedMessages,
+        temperature: 0.7,
+        max_tokens: 500,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+      },
+    );
+
+    return response.data.choices[0].message.content.trim();
+  } catch (error) {
+    logger.error(
+      "OpenAI-compatible suggestion error:",
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.error?.message || "AI suggestion failed",
+    );
+  }
+}
+
+// Anthropic Claude suggestion reply
+async function suggestReplyWithClaude(messages, lastMessage, apiKey, model) {
+  try {
+    const formattedMessages = messages.map((msg) => ({
+      role: msg.route === "INCOMING" ? "user" : "assistant",
+      content: msg.text,
+    }));
+
+    if (lastMessage) {
+      formattedMessages.push({ role: "user", content: lastMessage });
+    }
+
+    const response = await axios.post(
+      "https://api.anthropic.com/v1/messages",
+      {
+        model: model || "claude-3-5-sonnet-latest",
+        max_tokens: 500,
+        system:
+          "You are a helpful assistant. Generate a concise, natural-sounding reply to the conversation. The reply should be friendly, helpful, and appropriate for a business conversation. Only return the suggested reply without explanations.",
+        messages: formatClaudeHistory(formattedMessages),
+      },
+      {
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    return response.data.content?.[0]?.text?.trim() || "";
+  } catch (error) {
+    logger.error(
+      "Claude suggestion error:",
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.error?.message || "Claude suggestion failed",
+    );
+  }
+}
+
+// Merge consecutive same-role messages (Anthropic requires alternating roles)
+function formatClaudeHistory(messages) {
+  const merged = [];
+  for (const msg of messages) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === msg.role) {
+      last.content += `\n\n${msg.content}`;
+    } else {
+      merged.push({ role: msg.role, content: msg.content });
+    }
+  }
+  if (merged.length === 0 || merged[0].role !== "user") {
+    merged.unshift({ role: "user", content: "Hello." });
+  }
+  return merged;
+}
+
 const languageNames = [
   { code: "af", name: "Afrikaans" },
   { code: "am", name: "Amharic" },
@@ -2538,6 +2654,90 @@ async function translateWithDeepseek(text, targetLanguage, apiKey) {
     );
     throw new Error(
       error.response?.data?.error?.message || "Deepseek translation failed",
+    );
+  }
+}
+
+// Generic OpenAI-compatible translation
+async function translateWithOpenAICompatible(
+  text,
+  targetLanguage,
+  apiKey,
+  baseUrl,
+  model,
+) {
+  const targetLanguageName = languageNames[targetLanguage] || targetLanguage;
+
+  try {
+    const endpoint = `${(baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "")}/chat/completions`;
+
+    const response = await axios.post(
+      endpoint,
+      {
+        model: model || "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: `You are a translator. Translate the following text to ${targetLanguageName}. Preserve formatting and tone. Only return the translated text without explanations.`,
+          },
+          {
+            role: "user",
+            content: text,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 1000,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+      },
+    );
+
+    return response.data.choices[0].message.content.trim();
+  } catch (error) {
+    logger.error(
+      "OpenAI-compatible translation error:",
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.error?.message || "AI translation failed",
+    );
+  }
+}
+
+// Anthropic Claude translation
+async function translateWithClaude(text, targetLanguage, apiKey, model) {
+  const targetLanguageName = languageNames[targetLanguage] || targetLanguage;
+
+  try {
+    const response = await axios.post(
+      "https://api.anthropic.com/v1/messages",
+      {
+        model: model || "claude-3-5-sonnet-latest",
+        max_tokens: 1000,
+        system: `You are a translator. Translate the following text to ${targetLanguageName}. Preserve formatting and tone. Only return the translated text without explanations.`,
+        messages: [{ role: "user", content: text }],
+      },
+      {
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    return response.data.content?.[0]?.text?.trim() || "";
+  } catch (error) {
+    logger.error(
+      "Claude translation error:",
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.error?.message || "Claude translation failed",
     );
   }
 }
@@ -2922,27 +3122,13 @@ Return { nodes, edges } JSON following all the rules.`;
 }
 
 async function callOpenAI(apiKey, model, systemPrompt, userPrompt) {
-  const response = await axios.post(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.3,
-      max_tokens: 4000,
-      response_format: { type: "json_object" },
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 60000,
-    },
+  return callOpenAICompatible(
+    apiKey,
+    model,
+    systemPrompt,
+    userPrompt,
+    "https://api.openai.com/v1",
   );
-  return response.data.choices[0].message.content;
 }
 
 async function callGemini(apiKey, model, systemPrompt, userPrompt) {
@@ -2964,26 +3150,64 @@ async function callGemini(apiKey, model, systemPrompt, userPrompt) {
 }
 
 async function callDeepSeek(apiKey, model, systemPrompt, userPrompt) {
+  return callOpenAICompatible(
+    apiKey,
+    model,
+    systemPrompt,
+    userPrompt,
+    "https://api.deepseek.com/v1",
+  );
+}
+
+// Generic OpenAI-compatible chat completions call.
+// baseUrl can point to OpenAI, Azure OpenAI, DeepSeek, Groq, Ollama,
+// LocalAI, Together, or any OpenAI-compatible endpoint (incl. Copilot-style).
+async function callOpenAICompatible(apiKey, model, systemPrompt, userPrompt, baseUrl) {
+  const endpoint = `${(baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "")}/chat/completions`;
+  const isOpenAIHost = (baseUrl || "").includes("openai.com");
+  const payload = {
+    model: model || "gpt-3.5-turbo",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.3,
+    max_tokens: 4000,
+  };
+  // response_format (json_object) is only guaranteed on official OpenAI hosts
+  if (isOpenAIHost) {
+    payload.response_format = { type: "json_object" };
+  }
+  const response = await axios.post(endpoint, payload, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    timeout: 60000,
+  });
+  return response.data.choices?.[0]?.message?.content;
+}
+
+// Anthropic Claude
+async function callAnthropic(apiKey, model, systemPrompt, userPrompt) {
   const response = await axios.post(
-    "https://api.deepseek.com/v1/chat/completions",
+    "https://api.anthropic.com/v1/messages",
     {
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.3,
+      model: model || "claude-3-5-sonnet-latest",
       max_tokens: 4000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
     },
     {
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
       timeout: 60000,
     },
   );
-  return response.data.choices[0].message.content;
+  return response.data.content?.[0]?.text || "";
 }
 
 async function handleWAFormSubmission(change, userUID) {
@@ -3197,11 +3421,15 @@ module.exports = {
   callOpenAI,
   callGemini,
   callDeepSeek,
+  callOpenAICompatible,
+  callAnthropic,
   removeTokenFromAll,
   sendFCMNotification,
   translateWithOpenAI,
   translateWithGemini,
   translateWithDeepseek,
+  translateWithOpenAICompatible,
+  translateWithClaude,
   formatPhoneNumber,
   sendTemplateMessage,
   isValidEmail,
@@ -3251,6 +3479,8 @@ module.exports = {
   suggestReplyWithOpenAI,
   suggestReplyWithGemini,
   suggestReplyWithDeepseek,
+  suggestReplyWithOpenAICompatible,
+  suggestReplyWithClaude,
   testMongoConnection,
   parseJson,
   getElevenLabsVoices,

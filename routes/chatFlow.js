@@ -12,12 +12,15 @@ const {
   callOpenAI,
   callGemini,
   callDeepSeek,
+  callOpenAICompatible,
+  callAnthropic,
 } = require("../functions/function.js");
 const { sign } = require("jsonwebtoken");
 const validateUser = require("../middlewares/user.js");
 const { checkPlan } = require("../middlewares/plan.js");
 const validateAgent = require("../middlewares/agent.js");
 const { returnAddons } = require("../utils/addons.js");
+const { getUserAISettings } = require("./aiSettings");
 const axios = require("axios");
 const logger = require("../utils/logger.js");
 
@@ -607,15 +610,27 @@ router.get("/get_origians", validateUser, async (req, res) => {
 
 router.post("/generate", validateUser, async (req, res) => {
   try {
-    const {
+    let {
       instruction,
-      provider, // { id: "openai"|"gemini"|"deepseek" }
+      provider, // { id: "openai"|"gemini"|"deepseek"|"claude"|"openai_compatible" }
       model, // { id: "gpt-4o" }
       apiKey,
+      baseUrl,
       nodeSchemas, // serialized menuItems from frontend
       currentFlow, // { nodes, edges } or null
       mode, // "create" | "edit"
     } = req.body;
+
+    // Fall back to the user's saved AI settings when no apiKey sent
+    if (!apiKey) {
+      const saved = await getUserAISettings(req.decode.uid);
+      if (saved?.api_key) {
+        apiKey = saved.api_key;
+        baseUrl = baseUrl || saved.base_url;
+        if (!model?.id) model = { id: saved.model || "gpt-4o" };
+        if (!provider?.id) provider = { id: saved.provider || "openai_compatible" };
+      }
+    }
 
     if (!instruction || !provider?.id || !model?.id || !apiKey) {
       return res.json({
@@ -646,6 +661,23 @@ router.post("/generate", validateUser, async (req, res) => {
           model.id,
           systemPrompt,
           userPrompt,
+        );
+        break;
+      case "claude":
+        rawJson = await callAnthropic(
+          apiKey,
+          model.id,
+          systemPrompt,
+          userPrompt,
+        );
+        break;
+      case "openai_compatible":
+        rawJson = await callOpenAICompatible(
+          apiKey,
+          model.id,
+          systemPrompt,
+          userPrompt,
+          baseUrl,
         );
         break;
       default:

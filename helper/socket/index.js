@@ -21,8 +21,11 @@ const {
   suggestReplyWithOpenAI,
   suggestReplyWithGemini,
   suggestReplyWithDeepseek,
+  suggestReplyWithOpenAICompatible,
+  suggestReplyWithClaude,
   sendTemplateMessage,
 } = require("../../functions/function.js");
+const { getUserAISettings } = require("../../routes/aiSettings.js");
 const moment = require("moment-timezone");
 const randomstring = require("randomstring");
 const {
@@ -1478,12 +1481,26 @@ function processSocketEvent({
           break;
 
         case "suggest_reply":
-          const {
+          let {
             chatId: chatIddd,
             lastMessage: lastMsg,
             provider: aiProvider,
             apiKey: aiKey,
+            baseUrl: aiBaseUrl,
+            model: aiModel,
           } = payload;
+
+          if (!aiKey) {
+            const saved = await getUserAISettings(
+              isAgent ? socket?.userData?.owner_uid : uid,
+            );
+            if (saved?.api_key) {
+              aiKey = saved.api_key;
+              aiProvider = aiProvider || saved.provider;
+              aiBaseUrl = aiBaseUrl || saved.base_url;
+              aiModel = aiModel || saved.model;
+            }
+          }
 
           if (!chatIddd || !aiProvider || !aiKey) {
             return socket.emit("error", {
@@ -1519,6 +1536,21 @@ function processSocketEvent({
                 recentMessages,
                 lastMsg,
                 aiKey,
+              );
+            } else if (aiProvider === "claude") {
+              suggestion = await suggestReplyWithClaude(
+                recentMessages,
+                lastMsg,
+                aiKey,
+                aiModel,
+              );
+            } else if (aiProvider === "openai_compatible") {
+              suggestion = await suggestReplyWithOpenAICompatible(
+                recentMessages,
+                lastMsg,
+                aiKey,
+                aiBaseUrl,
+                aiModel,
               );
             } else {
               return socket.emit("error", {
