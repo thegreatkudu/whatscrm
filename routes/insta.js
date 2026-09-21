@@ -251,7 +251,7 @@ router.post(
 router.post("/resubscribe-all", adminValidator, async (_req, res) => {
   try {
     const accounts = await query(
-      `SELECT uid, webhook_id, access_token FROM instagram_accounts`,
+      `SELECT uid, webhook_id, page_id, access_token FROM instagram_accounts`,
       [],
     );
     const results = [];
@@ -275,7 +275,6 @@ router.post("/resubscribe-all", adminValidator, async (_req, res) => {
         for (const [label, fields] of [
           ["comments_only", "comments"],
           ["messages_only", "messages"],
-          ["read_only", "message_reads"],
         ]) {
           const r = await fetch(
             `https://graph.facebook.com/v21.0/${acc.webhook_id}/subscribed_apps`,
@@ -289,6 +288,20 @@ router.post("/resubscribe-all", adminValidator, async (_req, res) => {
             },
           );
           probe[label] = await r.json();
+        }
+        if (acc.page_id) {
+          const r = await fetch(
+            `https://graph.facebook.com/v21.0/${acc.page_id}/subscribed_apps`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({
+                subscribed_fields: "messages,messaging_postbacks",
+                access_token: acc.access_token,
+              }),
+            },
+          );
+          probe.page_subscribe = await r.json();
         }
       }
 
