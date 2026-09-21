@@ -18,7 +18,9 @@ async function genInstaWebhook() {
 }
 
 // ─── Add this function to your existing insta.js ──────────
-async function subscribeInstaWebhook(accessToken) {
+// Subscribe the Instagram Business account to webhook fields. Per Meta docs
+// this must go to /{ig-business-id}/subscribed_apps with the Page access token.
+async function subscribeInstaWebhook(accessToken, igBusinessId) {
   const SUBSCRIBED_FIELDS = [
     "messages",
     "messaging_seen",
@@ -31,7 +33,7 @@ async function subscribeInstaWebhook(accessToken) {
 
   try {
     const res = await fetch(
-      `https://graph.facebook.com/${API_VERSION}/me/subscribed_apps`,
+      `https://graph.facebook.com/${API_VERSION}/${igBusinessId}/subscribed_apps`,
       {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },

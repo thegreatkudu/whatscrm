@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const { query } = require("../database/dbpromise.js");
 const validateUser = require("../middlewares/user.js");
+const adminValidator = require("../middlewares/admin.js");
 const {
   exchangeShortToken,
   exchangeLongToken,
@@ -176,7 +177,7 @@ router.get("/callback", async (req, res) => {
       ],
     );
 
-    await subscribeInstaWebhook(pageAccessToken);
+    await subscribeInstaWebhook(pageAccessToken, igBusinessId);
 
     return res.send(`<html><body style="${pageStyle}">
       <h2>✅ Connected @${profile.username}</h2>
@@ -245,6 +246,42 @@ router.post(
     }
   },
 );
+
+// ─── Admin: force re-subscribe + webhook status for all IG accounts ──
+router.post("/resubscribe-all", adminValidator, async (_req, res) => {
+  try {
+    const accounts = await query(
+      `SELECT uid, webhook_id, access_token FROM instagram_accounts`,
+      [],
+    );
+    const results = [];
+    for (const acc of accounts) {
+      if (!acc?.access_token || !acc?.webhook_id) {
+        results.push({
+          uid: acc.uid,
+          ig_id: acc.webhook_id,
+          ok: false,
+          error: "missing token/id",
+        });
+        continue;
+      }
+      const sub = await subscribeInstaWebhook(
+        acc.access_token,
+        String(acc.webhook_id),
+      );
+      results.push({
+        uid: acc.uid,
+        ig_id: acc.webhook_id,
+        ok: !sub?.error,
+        response: sub,
+      });
+    }
+    res.json({ success: true, results });
+  } catch (err) {
+    logger.log(err);
+    res.json({ success: false, msg: "Something went wrong" });
+  }
+});
 
 router.get("/webhook/:uid", (req, res) => {
   const VERIFY_TOKEN = req.params.uid;
