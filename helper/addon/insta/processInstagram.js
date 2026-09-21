@@ -52,7 +52,7 @@ async function downloadAndSaveInstaMedia(mediaUrl, accessToken) {
 async function fetchInstaMediaUrl(mediaId, accessToken) {
   try {
     const res = await axios.get(
-      `https://graph.instagram.com/${API_VERSION}/${mediaId}?fields=url,mime_type&access_token=${accessToken}`,
+      `https://graph.facebook.com/${API_VERSION}/${mediaId}?fields=url,mime_type&access_token=${accessToken}`,
     );
     return res.data;
   } catch (err) {

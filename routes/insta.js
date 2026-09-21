@@ -44,7 +44,7 @@ router.get("/auth-url", validateUser, async (req, res) => {
     }
 
     const SCOPES =
-      "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish";
+      "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,pages_show_list,pages_read_engagement,business_management";
 
     const params = new URLSearchParams({
       client_id: apiKeys.insta_app_id,
@@ -54,7 +54,10 @@ router.get("/auth-url", validateUser, async (req, res) => {
       state: req.decode.uid,
     });
 
-    const url = `https://www.instagram.com/oauth/authorize?${params.toString()}`;
+    // Use Facebook Login (facebook.com/dialog/oauth): the standalone
+    // instagram.com/oauth/authorize host is failing Meta-wide with
+    // "Sorry, this page isn't available".
+    const url = `https://www.facebook.com/v21.0/dialog/oauth?${params.toString()}`;
     return res.json({ success: true, url });
   } catch (err) {
     logger.log(err);
@@ -108,7 +111,7 @@ router.get("/callback", async (req, res) => {
       throw new Error("Instagram callback URL not configured.");
     }
 
-    // Short-lived token
+    // Short-lived Facebook user token (Instagram Login with Facebook)
     const tokenData = await exchangeShortToken({
       appId: apiKeys.insta_app_id,
       appSecret: apiKeys.insta_app_secret,
@@ -120,22 +123,27 @@ router.get("/callback", async (req, res) => {
       throw new Error("Token exchange failed: " + JSON.stringify(tokenData));
     }
 
-    // Long-lived token
+    // Long-lived Facebook user token
     const longData = await exchangeLongToken({
+      appId: apiKeys.insta_app_id,
       appSecret: apiKeys.insta_app_secret,
       shortToken: tokenData.access_token,
     });
 
-    const finalToken = longData.access_token || tokenData.access_token;
+    const finalUserToken = longData.access_token || tokenData.access_token;
 
-    // Fetch profile
-    const profile = await fetchInstaProfile(finalToken);
+    // Discover the linked Page + Instagram Business account; returns the
+    // Page access token used for IG messaging/media/webhooks.
+    const profile = await fetchInstaProfile(finalUserToken);
     if (!profile?.username) {
-      throw new Error("Could not fetch Instagram profile.");
+      throw new Error(
+        "Could not fetch Instagram profile. Link an Instagram Business account to a Facebook Page first.",
+      );
     }
 
-    const igBusinessId = String(profile.user_id || profile.id);
+    const igBusinessId = String(profile.id);
     const igGraphId = String(profile.id);
+    const pageAccessToken = profile.page_access_token;
 
     // ── Delete from ANY uid first (no duplicates across users) ────────────
     await query(`DELETE FROM instagram_accounts WHERE webhook_id = ?`, [
@@ -154,18 +162,18 @@ router.get("/callback", async (req, res) => {
         igBusinessId,
         igGraphId,
         igBusinessId,
-        String(tokenData.user_id || ""),
+        String(profile.page_id || ""),
         profile.username,
         profile.name || "",
         profile.profile_picture_url || "",
-        finalToken,
+        pageAccessToken,
         longData.token_type || "bearer",
         longData.expires_in || null,
         new Date(),
       ],
     );
 
-    await subscribeInstaWebhook(finalToken);
+    await subscribeInstaWebhook(pageAccessToken);
 
     return res.send(`<html><body style="${pageStyle}">
       <h2>✅ Connected @${profile.username}</h2>

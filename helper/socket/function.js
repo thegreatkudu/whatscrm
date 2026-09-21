@@ -121,7 +121,7 @@ async function sendInstaMsg({ uid, to, msgObj, chatInfo }) {
     }
 
     const res = await fetch(
-      `https://graph.instagram.com/${API_VERSION}/me/messages?access_token=${accessToken}`,
+      `https://graph.facebook.com/${API_VERSION}/me/messages?access_token=${accessToken}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

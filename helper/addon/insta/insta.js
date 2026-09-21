@@ -31,7 +31,7 @@ async function subscribeInstaWebhook(accessToken) {
 
   try {
     const res = await fetch(
-      `https://graph.instagram.com/${API_VERSION}/me/subscribed_apps`,
+      `https://graph.facebook.com/${API_VERSION}/me/subscribed_apps`,
       {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -58,33 +58,67 @@ async function getInstaCallbackUri() {
   }
 }
 
+// Exchange the Facebook-Login authorization code for a short-lived Facebook
+// user access token (Instagram Login with Facebook).
 async function exchangeShortToken({ appId, appSecret, redirectUri, code }) {
-  const res = await fetch("https://api.instagram.com/oauth/access_token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: appId,
-      client_secret: appSecret,
-      grant_type: "authorization_code",
-      redirect_uri: redirectUri,
-      code,
-    }),
+  const res = await fetch(
+    `https://graph.facebook.com/${API_VERSION}/oauth/access_token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: appId,
+        client_secret: appSecret,
+        grant_type: "authorization_code",
+        redirect_uri: redirectUri,
+        code,
+      }),
+    },
+  );
+  return res.json();
+}
+
+// Extend the short-lived Facebook user token to a long-lived one.
+async function exchangeLongToken({ appId, appSecret, shortToken }) {
+  const params = new URLSearchParams({
+    grant_type: "fb_exchange_token",
+    client_id: appId,
+    client_secret: appSecret,
+    fb_exchange_token: shortToken,
   });
-  return res.json();
-}
-
-async function exchangeLongToken({ appSecret, shortToken }) {
   const res = await fetch(
-    `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`,
+    `https://graph.facebook.com/${API_VERSION}/oauth/access_token?${params.toString()}`,
   );
   return res.json();
 }
 
+// Discover the linked Facebook Page with an Instagram Business Account and
+// return the IG profile data plus the Page access token (used for IG
+// messaging / media / webhooks on graph.facebook.com).
 async function fetchInstaProfile(token) {
-  const res = await fetch(
-    `https://graph.instagram.com/${API_VERSION}/me?fields=id,user_id,name,username,profile_picture_url&access_token=${token}`,
+  const accountsRes = await fetch(
+    `https://graph.facebook.com/${API_VERSION}/me/accounts?fields=id,name,access_token,instagram_business_account{id,username,name,profile_picture_url}&access_token=${token}`,
   );
-  return res.json();
+  const accountsData = await accountsRes.json();
+  const pages = accountsData?.data || [];
+
+  const page = pages.find((p) => p?.instagram_business_account);
+  if (!page) {
+    throw new Error(
+      "No Facebook Page with an Instagram Business account was found. " +
+        "Link an Instagram professional account to a Page first.",
+    );
+  }
+
+  const ig = page.instagram_business_account;
+  return {
+    id: String(ig.id),
+    username: ig.username,
+    name: ig.name || page.name,
+    profile_picture_url: ig.profile_picture_url || "",
+    page_id: String(page.id),
+    page_access_token: page.access_token,
+  };
 }
 
 module.exports = {
