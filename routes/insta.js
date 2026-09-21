@@ -269,11 +269,35 @@ router.post("/resubscribe-all", adminValidator, async (_req, res) => {
         acc.access_token,
         String(acc.webhook_id),
       );
+
+      const probe = { full: !!sub?.error ? sub : null };
+      if (sub?.error) {
+        for (const [label, fields] of [
+          ["comments_only", "comments"],
+          ["messages_only", "messages"],
+          ["read_only", "message_reads"],
+        ]) {
+          const r = await fetch(
+            `https://graph.facebook.com/v21.0/${acc.webhook_id}/subscribed_apps`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({
+                subscribed_fields: fields,
+                access_token: acc.access_token,
+              }),
+            },
+          );
+          probe[label] = await r.json();
+        }
+      }
+
       results.push({
         uid: acc.uid,
         ig_id: acc.webhook_id,
         ok: !sub?.error,
         response: sub,
+        probe,
       });
     }
     res.json({ success: true, results });
