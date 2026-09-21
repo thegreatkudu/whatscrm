@@ -43,8 +43,11 @@ router.get("/auth-url", validateUser, async (req, res) => {
       });
     }
 
+    // Facebook Login for Business permission family (valid on
+    // facebook.com/dialog/oauth; instagram_business_* only works with the
+    // Instagram Login host www.instagram.com/oauth/authorize).
     const SCOPES =
-      "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,pages_show_list,pages_read_engagement,business_management";
+      "instagram_basic,instagram_manage_messages,instagram_manage_comments,pages_show_list,pages_read_engagement,business_management";
 
     const params = new URLSearchParams({
       client_id: apiKeys.insta_app_id,
