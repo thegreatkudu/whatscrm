@@ -14,12 +14,34 @@ const API_VERSION = "v21.0";
 // In-memory webhook delivery tracker (for diagnostics)
 const webhookHits = [];
 
-function recordWebhookHit(status, detail) {
+function recordWebhookHit(status, body) {
+  let summary = "";
+  try {
+    const entry = body?.entry?.[0];
+    const ms = entry?.messaging?.[0] || entry?.standby?.[0] || {};
+    let type = "other";
+    if (ms?.read) type = "read";
+    else if (ms?.delivery) type = "delivery";
+    else if (ms?.postback) type = "postback";
+    else if (ms?.message?.is_echo) type = "echo";
+    else if (ms?.message) type = "message";
+    const text = String(ms?.message?.text || ms?.postback?.payload || ms?.postback?.title || "").slice(0, 40);
+    summary = [
+      `type=${type}`,
+      ms?.message?.is_echo ? "is_echo" : "",
+      text ? `text="${text}"` : "",
+      ms?.sender?.id ? `from=${String(ms.sender.id).slice(-6)}` : "",
+      ms?.recipient?.id ? `to=${String(ms.recipient.id).slice(-6)}` : "",
+      entry?.standby ? "standby" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  } catch {}
   webhookHits.push({
     at: new Date().toISOString(),
     status,
-    detail,
-    pageId: String(detail?.entry?.[0]?.id || ""),
+    summary,
+    pageId: String(body?.entry?.[0]?.id || ""),
   });
   if (webhookHits.length > 50) webhookHits.shift();
 }
