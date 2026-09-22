@@ -284,7 +284,14 @@ router.get("/diag", adminValidator, async (_req, res) => {
       `SELECT id, uid, page_id, page_name, webhook_id, connected_at FROM messenger_accounts`,
       [],
     );
-    res.json({ success: true, count: accounts.length, accounts });
+    const chats = await query(
+      `SELECT chat_id, sender_name, sender_mobile, origin, last_message, createdAt
+       FROM beta_chats
+       WHERE uid IN (SELECT DISTINCT uid FROM messenger_accounts) AND origin = 'messenger'
+       ORDER BY createdAt DESC LIMIT 8`,
+      [],
+    );
+    res.json({ success: true, count: accounts.length, accounts, chats });
   } catch (err) {
     logger.error(err);
     res.json({ success: false, msg: "Something went wrong" });
