@@ -281,9 +281,41 @@ module.exports = router;
 router.get("/diag", adminValidator, async (_req, res) => {
   try {
     const accounts = await query(
-      `SELECT id, uid, page_id, page_name, webhook_id, connected_at FROM messenger_accounts`,
+      `SELECT id, uid, page_id, page_name, webhook_id, connected_at, page_access_token FROM messenger_accounts`,
       [],
     );
+    const probes = [];
+    for (const acc of accounts) {
+      if (!acc?.page_access_token) {
+        probes.push({ page_id: acc.page_id, ok: false, error: "no token" });
+        continue;
+      }
+      const [getRes, postRes] = await Promise.all([
+        fetch(
+          `https://graph.facebook.com/v21.0/${acc.page_id}/subscribed_apps?access_token=${acc.page_access_token}`,
+        ).then((r) => r.json()),
+        fetch(
+          `https://graph.facebook.com/v21.0/${acc.page_id}/subscribed_apps`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              subscribed_fields: "messages,messaging_postbacks",
+              access_token: acc.page_access_token,
+            }),
+          },
+        ).then((r) => r.json()),
+      ]);
+      probes.push({
+        page_id: acc.page_id,
+        postOk: !postRes?.error,
+        postErr: postRes?.error?.message,
+        subscribedApps: (getRes?.data || []).map((a) => ({
+          id: a.id,
+          name: a.name,
+        })),
+      });
+    }
     const chats = await query(
       `SELECT chat_id, sender_name, sender_mobile, origin, last_message, createdAt
        FROM beta_chats
@@ -291,7 +323,7 @@ router.get("/diag", adminValidator, async (_req, res) => {
        ORDER BY createdAt DESC LIMIT 8`,
       [],
     );
-    res.json({ success: true, count: accounts.length, accounts, chats });
+    res.json({ success: true, count: accounts.length, accounts, chats, probes });
   } catch (err) {
     logger.error(err);
     res.json({ success: false, msg: "Something went wrong" });
