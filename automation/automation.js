@@ -534,6 +534,34 @@ const AI_AUTO_SYSTEM_PROMPT =
   "Answer the customer's latest message using the chat history below. " +
   "Keep replies short, friendly and in plain text. Never use markdown.";
 
+// Admin-visible attempt log for the AI auto-reply fallback, so silent
+// "not triggered" cases are diagnosable without server logs.
+async function ensureAiReplyLogTable() {
+  await query(`CREATE TABLE IF NOT EXISTS ai_auto_reply_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    uid VARCHAR(64) NULL,
+    chat_id VARCHAR(255) NULL,
+    origin VARCHAR(20) NULL,
+    status VARCHAR(30) NULL,
+    detail TEXT NULL,
+    created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+}
+
+async function logAiReply(uid, chatId, origin, status, detail) {
+  try {
+    await query(
+      `INSERT INTO ai_auto_reply_log (uid, chat_id, origin, status, detail)
+       VALUES (?, ?, ?, ?, ?)`,
+      [uid || null, chatId || null, origin || null, status || null, detail || null],
+    );
+  } catch (err) {
+    logger.log("[AI auto-reply log] failed to write:", err?.message);
+  }
+}
+
+ensureAiReplyLogTable().catch(() => {});
+
 // Global AI auto-reply fallback: fires when the user has no active flow for
 // the channel. Uses the workspace's saved ai_settings and always opts out of
 // waiving contacts who requested to be unsubscribed (WhatsApp).
@@ -560,7 +588,20 @@ async function aiAutoReply({ uid, message, user, sessionId, origin, chatId }) {
     }
 
     const settings = await getUserAISettings(uid);
-    if (!settings?.api_key || Number(settings?.enabled) === 0) return;
+    if (!settings?.api_key || Number(settings?.enabled) === 0) {
+      await logAiReply(
+        uid,
+        chatId,
+        origin,
+        "skipped",
+        !settings
+          ? "no ai_settings row for uid"
+          : Number(settings?.enabled) === 0
+            ? "ai auto-reply disabled in AI settings"
+            : "no api key saved",
+      );
+      return;
+    }
 
     const recentRows = await query(
       `SELECT type, msgContext, route, timestamp
@@ -572,17 +613,32 @@ async function aiAutoReply({ uid, message, user, sessionId, origin, chatId }) {
 
     const userPrompt = buildConversationHistory(recentRows?.reverse(), 12);
 
-    const reply = String(
-      (await callAIProvider({
-        provider: settings.provider,
-        apiKey: settings.api_key,
-        baseUrl: settings.base_url,
-        model: settings.model,
-        systemPrompt: AI_AUTO_SYSTEM_PROMPT,
-        userPrompt,
-      })) || "",
-    ).trim();
-    if (!reply) return;
+    let reply = "";
+    try {
+      reply = String(
+        (await callAIProvider({
+          provider: settings.provider,
+          apiKey: settings.api_key,
+          baseUrl: settings.base_url,
+          model: settings.model,
+          systemPrompt: AI_AUTO_SYSTEM_PROMPT,
+          userPrompt,
+        })) || "",
+      ).trim();
+    } catch (aiErr) {
+      await logAiReply(
+        uid,
+        chatId,
+        origin,
+        "ai-error",
+        String(aiErr?.message || aiErr),
+      );
+      return;
+    }
+    if (!reply) {
+      await logAiReply(uid, chatId, origin, "empty", "provider returned empty reply");
+      return;
+    }
 
     const sendMsg = await sendWaMessage({
       origin,
@@ -591,6 +647,19 @@ async function aiAutoReply({ uid, message, user, sessionId, origin, chatId }) {
       isGroup: false,
       content: { type: "text", text: { preview_url: true, body: reply } },
     });
+
+    if (!sendMsg) {
+      await logAiReply(
+        uid,
+        chatId,
+        origin,
+        "send-failed",
+        "sendWaMessage returned no id (likely missing messenger/insta page token or chat info)",
+      );
+      return;
+    }
+
+    await logAiReply(uid, chatId, origin, "sent", `replied to ${message.senderMobile}`);
 
     if (sendMsg) {
       const messageData = {

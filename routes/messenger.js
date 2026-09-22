@@ -337,14 +337,21 @@ router.get("/diag", adminValidator, async (_req, res) => {
         })),
       });
     }
-    const chats = await query(
+    const sql_chats = await query(
       `SELECT chat_id, sender_name, sender_mobile, origin, last_message, createdAt
        FROM beta_chats
        WHERE uid IN (SELECT DISTINCT uid FROM messenger_accounts) AND origin = 'messenger'
        ORDER BY createdAt DESC LIMIT 8`,
       [],
     );
-    res.json({ success: true, count: accounts.length, accounts, chats, probes, webhookHits });
+    const aiReplyLog = await query(
+      `SELECT id, uid, chat_id, origin, status, detail, created
+       FROM ai_auto_reply_log
+       ORDER BY id DESC LIMIT 20`,
+      [],
+    );
+    const chats = Array.isArray(sql_chats) ? sql_chats : [];
+    res.json({ success: true, count: accounts.length, accounts, chats, probes, webhookHits, aiReplyLog });
   } catch (err) {
     logger.error(err);
     res.json({ success: false, msg: "Something went wrong" });
