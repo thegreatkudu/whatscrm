@@ -3134,9 +3134,14 @@ async function callOpenAI(apiKey, model, systemPrompt, userPrompt, opts = {}) {
 
 async function callGemini(apiKey, model, systemPrompt, userPrompt, opts = {}) {
   const { GoogleGenerativeAI } = require("@google/generative-ai");
+  const GEMINI_DEPRECATED = {
+    "gemini-2.5-pro": "gemini-3.1-pro-preview",
+    "gemini-2.5-flash-lite": "gemini-2.5-flash-lite",
+  };
+  const resolved = GEMINI_DEPRECATED[model] || model;
   const genAI = new GoogleGenerativeAI(apiKey);
   const geminiModel = genAI.getGenerativeModel({
-    model,
+    model: resolved,
     generationConfig: {
       temperature: opts.temperature ?? 0.3,
       maxOutputTokens: opts.maxTokens ?? 4000,
