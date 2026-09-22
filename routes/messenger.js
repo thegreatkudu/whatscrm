@@ -11,6 +11,19 @@ const { processAutomation } = require("../automation/automation.js");
 
 const API_VERSION = "v21.0";
 
+// In-memory webhook delivery tracker (for diagnostics)
+const webhookHits = [];
+
+function recordWebhookHit(status, detail) {
+  webhookHits.push({
+    at: new Date().toISOString(),
+    status,
+    detail,
+    pageId: String(detail?.entry?.[0]?.id || ""),
+  });
+  if (webhookHits.length > 50) webhookHits.shift();
+}
+
 // ─── Admin: get messenger config ──────────────────────────────
 router.get("/config", adminValidator, async (req, res) => {
   try {
@@ -224,8 +237,13 @@ router.get("/webhook/:uid", (req, res) => {
 // Replace the existing router.post("/webhook/:uid", ...) with:
 router.post("/webhook/:uid", async (req, res) => {
   try {
+    recordWebhookHit("received", req.body);
+
     const signature = req.headers["x-hub-signature-256"];
-    if (!signature) return res.status(403).send("Forbidden");
+    if (!signature) {
+      recordWebhookHit("rejected-no-sig", req.body);
+      return res.status(403).send("Forbidden");
+    }
 
     const [pvt] = await query(
       `SELECT messenger_app_secret FROM web_private LIMIT 1`,
@@ -240,7 +258,10 @@ router.post("/webhook/:uid", async (req, res) => {
         .update(req.rawBody || JSON.stringify(req.body))
         .digest("hex");
 
-    if (signature !== expectedSig) return res.status(403).send("Forbidden");
+    if (signature !== expectedSig) {
+      recordWebhookHit("rejected-bad-sig", req.body);
+      return res.status(403).send("Forbidden");
+    }
 
     res.status(200).send("EVENT_RECEIVED");
 
@@ -323,7 +344,7 @@ router.get("/diag", adminValidator, async (_req, res) => {
        ORDER BY createdAt DESC LIMIT 8`,
       [],
     );
-    res.json({ success: true, count: accounts.length, accounts, chats, probes });
+    res.json({ success: true, count: accounts.length, accounts, chats, probes, webhookHits });
   } catch (err) {
     logger.error(err);
     res.json({ success: false, msg: "Something went wrong" });
