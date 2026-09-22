@@ -717,6 +717,14 @@ async function processAutomation({
     return logger.log("User does not have any active automation flow");
   }
 
+  await logAiReply(
+    uid,
+    chatId,
+    origin,
+    "flows-active",
+    `${userFlows.length} active flow(s) shadowing the AI fallback (sessionId=${sessionId})`,
+  );
+
   if (!senderMobile) {
     return logger.log("Invalid message found", message);
   }
