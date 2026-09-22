@@ -8,6 +8,34 @@ const logger = require("../../../utils/logger");
 
 const API_VERSION = "v21.0";
 
+const messengerNameCache = new Map();
+
+async function resolveMessengerName({ account, otherPersonId, isOutgoing }) {
+  try {
+    if (isOutgoing) return null;
+    const cached = messengerNameCache.get(otherPersonId);
+    if (cached) return cached;
+    const url =
+      `https://graph.facebook.com/${API_VERSION}/${otherPersonId}` +
+      `?fields=first_name,last_name,name&access_token=${account.page_access_token}`;
+    const res = await axios.get(url, { timeout: 8000 });
+    const first = res?.data?.first_name || "";
+    const last = res?.data?.last_name || "";
+    const name = res?.data?.name || `${first} ${last}`.trim() || "";
+    if (name) {
+      messengerNameCache.set(otherPersonId, name);
+      if (messengerNameCache.size > 500) {
+        const firstKey = messengerNameCache.keys().next().value;
+        messengerNameCache.delete(firstKey);
+      }
+    }
+    return name || null;
+  } catch (err) {
+    logger.log("Messenger profile fetch failed:", err?.message);
+    return null;
+  }
+}
+
 function getCurrentTimestamp() {
   return Math.round(Date.now() / 1000);
 }
@@ -223,7 +251,8 @@ async function processMessengerMessage({ body, uid }) {
       const chatId = `msng_${otherPersonId}`;
       const senderName = isOutgoing
         ? account.page_name || "Me"
-        : `msng_${otherPersonId}`;
+        : (await resolveMessengerName({ account, otherPersonId, isOutgoing })) ||
+          `msng_${otherPersonId}`;
       const senderMobile = otherPersonId;
 
       // Duplicate check
