@@ -277,3 +277,16 @@ router.get("/debug-callback-uri", async (req, res) => {
 });
 
 module.exports = router;
+// ─── Admin: diagnostic - list messenger accounts ─────────────
+router.get("/diag", adminValidator, async (_req, res) => {
+  try {
+    const accounts = await query(
+      `SELECT id, uid, page_id, page_name, webhook_id, connected_at FROM messenger_accounts`,
+      [],
+    );
+    res.json({ success: true, count: accounts.length, accounts });
+  } catch (err) {
+    logger.error(err);
+    res.json({ success: false, msg: "Something went wrong" });
+  }
+});
